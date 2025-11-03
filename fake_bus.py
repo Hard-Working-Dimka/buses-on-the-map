@@ -21,20 +21,21 @@ async def run_bus(url, bus_id, route):
         "busId": bus_id,
         "route": bus_id
     }
-    for coord in route['coordinates']:
-        lat = coord[0]
-        lng = coord[1]
-        bus["lat"] = lat
-        bus["lng"] = lng
+    while True:
+        for coord in route['coordinates']:
+            lat = coord[0]
+            lng = coord[1]
+            bus["lat"] = lat
+            bus["lng"] = lng
 
-        json_data = json.dumps(bus, ensure_ascii=False)
+            json_data = json.dumps(bus, ensure_ascii=False)
 
-        try:
-            async with open_websocket_url(url) as ws:
-                await ws.send_message(json_data)
-                await trio.sleep(2)
-        except OSError as ose:
-            print('Connection attempt failed: %s' % ose, file=stderr)
+            try:
+                async with open_websocket_url(url) as ws:
+                    await ws.send_message(json_data)
+                    await trio.sleep(2)
+            except OSError as ose:
+                print('Connection attempt failed: %s' % ose, file=stderr)
 
 
 async def run_busses():

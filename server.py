@@ -39,7 +39,7 @@ async def update_current_location(request):
             current_location = await ws.get_message()
             current_location = json.loads(current_location)
 
-            BUSES[current_location['busId']] = {'busId': current_location['busId'],
+            BUSES[current_location['busId']] = {
                                                 'lat': current_location['lat'],
                                                 'lng': current_location['lng'],
                                                 'route': current_location['route'],
