@@ -1,1 +1,2 @@
 trio-websocket==0.12.2
+aiofiles==25.1.0
