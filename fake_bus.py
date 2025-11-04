@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from copy import deepcopy
 from functools import wraps
@@ -38,7 +39,7 @@ def relaunch_on_disconnect(async_function):
                 result = await async_function(*args, **kwargs)
                 return result
             except trio_websocket.ConnectionClosed as error:
-                print('поймал ошибку!')
+                logging.error('Lost connection to server')
                 await trio.sleep(5)
                 continue
 
@@ -84,6 +85,8 @@ async def send_updates(server_address, receive_channel, refresh_timeout):
               help="Delay in updating server coordinates.")
 @click.option('-v', '--v', type=bool, default=False, required=False, help="Turn on logging")  # TODO: add logging
 async def run_busses(server, routes_number, buses_per_route, websockets_number, emulator_id, refresh_timeout, v):
+    logging.basicConfig(level=logging.DEBUG)  # TODO: add connect with CLI
+
     async with trio.open_nursery() as nursery:
 
         channels = []

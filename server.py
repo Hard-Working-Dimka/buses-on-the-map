@@ -1,15 +1,25 @@
 import json
+import logging
 from functools import partial
 
 import trio
+import trio_websocket
 from trio_websocket import serve_websocket, ConnectionClosed
 
 BUSES = {}
 
 
-async def talk_to_browser(request):
-    ws = await request.accept()
+async def listen_browser(ws):
+    while True:
+        try:
+            response = await ws.get_message()
+            logging.debug(response)
+            print(response)
+        except trio_websocket.ConnectionClosed:
+            break
 
+
+async def send_new_location(ws):
     while True:
         try:
             buses_location = {
@@ -32,6 +42,13 @@ async def talk_to_browser(request):
             break
 
 
+async def talk_to_browser(request):
+    ws = await request.accept()
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(listen_browser, ws)
+        nursery.start_soon(send_new_location, ws)
+
+
 async def update_current_location(request):
     ws = await request.accept()
     while True:
@@ -45,7 +62,7 @@ async def update_current_location(request):
                 'route': current_location['route'],
             }
 
-            print(current_location)
+            # print(current_location) TODO add to logger
         except ConnectionClosed:
             break
 
@@ -57,4 +74,8 @@ async def main():
         nursery.start_soon(serve_websocket_with_ssl_contex, talk_to_browser, '127.0.0.1', 8000)
 
 
-trio.run(main)
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    logging.getLogger('trio-websocket').setLevel(logging.CRITICAL)
+
+    trio.run(main)
