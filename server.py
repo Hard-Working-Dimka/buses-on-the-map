@@ -27,7 +27,7 @@ async def talk_to_browser(request):
 
             buses_location = json.dumps(buses_location)
             await ws.send_message(buses_location)
-            await trio.sleep(1)
+            await trio.sleep(0.1)
         except ConnectionClosed:
             break
 
@@ -40,10 +40,10 @@ async def update_current_location(request):
             current_location = json.loads(current_location)
 
             BUSES[current_location['busId']] = {
-                                                'lat': current_location['lat'],
-                                                'lng': current_location['lng'],
-                                                'route': current_location['route'],
-                                                }
+                'lat': current_location['lat'],
+                'lng': current_location['lng'],
+                'route': current_location['route'],
+            }
 
             print(current_location)
         except ConnectionClosed:
