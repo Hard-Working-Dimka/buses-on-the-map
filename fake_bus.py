@@ -1,11 +1,14 @@
 import json
 import os
 from copy import deepcopy
+from functools import wraps
 from itertools import cycle, islice
 from random import randint, choice
 
 import trio
 from sys import stderr
+
+import trio_websocket
 from trio_websocket import open_websocket_url
 import asyncclick as click
 
@@ -27,6 +30,21 @@ def generate_bus_id(route_id, bus_index):
     return f"{route_id}-{bus_index}"
 
 
+def relaunch_on_disconnect(async_function):
+    @wraps(async_function)
+    async def wrapper(*args, **kwargs):
+        while True:
+            try:
+                result = await async_function(*args, **kwargs)
+                return result
+            except trio_websocket.ConnectionClosed as error:
+                print('поймал ошибку!')
+                await trio.sleep(5)
+                continue
+
+    return wrapper
+
+
 async def run_bus(send_channel, bus_id, route):
     bus = {
         "busId": bus_id,
@@ -44,6 +62,7 @@ async def run_bus(send_channel, bus_id, route):
             await trio.sleep(1)
 
 
+@relaunch_on_disconnect
 async def send_updates(server_address, receive_channel, refresh_timeout):
     try:
         async with open_websocket_url(server_address) as ws:
