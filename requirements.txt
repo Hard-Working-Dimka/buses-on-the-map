@@ -1,2 +1,3 @@
 trio-websocket==0.12.2
 aiofiles==25.1.0
+asyncclick==8.1.8.0

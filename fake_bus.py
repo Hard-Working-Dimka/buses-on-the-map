@@ -7,14 +7,16 @@ from random import randint, choice
 import trio
 from sys import stderr
 from trio_websocket import open_websocket_url
-
-URL_FOR_BUSSES_UPDATE = 'ws://localhost:8080'
-QUANTITY_UF_CHANNELS = 10
-DUPLICATE_BUSES = 70
+import asyncclick as click
 
 
-def load_routes(directory_path='routes'):
-    for filename in os.listdir(directory_path):
+def load_routes(quantity_of_routes, directory_path='routes'):
+    if quantity_of_routes is None:
+        filesname = os.listdir(directory_path)
+    else:
+        filesname = os.listdir(directory_path)[:quantity_of_routes]
+
+    for filename in filesname:
         if filename.endswith(".json"):
             filepath = os.path.join(directory_path, filename)
             with open(filepath, 'r', encoding='utf8') as file:
@@ -42,32 +44,41 @@ async def run_bus(send_channel, bus_id, route):
             await trio.sleep(1)
 
 
-async def send_updates(server_address, receive_channel):
+async def send_updates(server_address, receive_channel, refresh_timeout):
     try:
         async with open_websocket_url(server_address) as ws:
             while True:
                 async for message in receive_channel:
                     await ws.send_message(message)
-                    await trio.sleep(0.1)
+                    await trio.sleep(refresh_timeout)
     except OSError as ose:
         print('Connection attempt failed: %s' % ose, file=stderr)
 
 
-async def run_busses():
+@click.command()
+@click.option('-s', '--server', type=str, default='ws://localhost:8080', required=False, help="Server address.")
+@click.option('-r', '--routes_number', type=int, default=None, required=False, help="Quantity of routes")
+@click.option('-b', '--buses_per_route', type=int, default=1, required=False, help="Quantity of busses on one route.")
+@click.option('-ws', '--websockets_number', type=int, default=10, required=False, help="Quantity of websockets")
+@click.option('-id', '--emulator_id', type=str, default=None, required=False, help="prefix to BusID.")
+@click.option('-t', '--refresh_timeout', type=float, default=1, required=False,
+              help="Delay in updating server coordinates.")
+@click.option('-v', '--v', type=bool, default=False, required=False, help="Turn on logging")  # TODO: add logging
+async def run_busses(server, routes_number, buses_per_route, websockets_number, emulator_id, refresh_timeout, v):
     async with trio.open_nursery() as nursery:
 
         channels = []
-        for channel in range(QUANTITY_UF_CHANNELS):
+        for channel in range(websockets_number):
             send_channel, receive_channel = trio.open_memory_channel(100)
 
-            nursery.start_soon(send_updates, URL_FOR_BUSSES_UPDATE, receive_channel)
+            nursery.start_soon(send_updates, server, receive_channel, refresh_timeout)
 
             channels.append([send_channel, receive_channel])
 
-        for route in load_routes():
+        for route in load_routes(quantity_of_routes=routes_number):
             quantity_of_points = len(route['coordinates'])
             route['coordinates'] = cycle(route['coordinates'])
-            quantity_uf_buses = randint(1, DUPLICATE_BUSES)
+            quantity_uf_buses = randint(1, buses_per_route)
 
             for bus_index in range(quantity_uf_buses):
                 channel = choice(channels)
@@ -76,8 +87,11 @@ async def run_busses():
                                                    None)
 
                 bus_id = generate_bus_id(route_copy['name'], bus_index)
+                if emulator_id is not None:
+                    bus_id = f'{emulator_id}-{bus_id}'
 
                 nursery.start_soon(run_bus, channel[0], bus_id, route_copy)
 
 
-trio.run(run_busses)
+if __name__ == '__main__':
+    trio.run(run_busses.main)
