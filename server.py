@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import dataclass, asdict
 from functools import partial
 
 import trio
@@ -9,48 +10,64 @@ from trio_websocket import serve_websocket, ConnectionClosed
 BUSES = {}
 
 
-async def listen_browser(ws, send_channel):
+@dataclass
+class Bus:
+    busId: str
+    lat: float
+    lng: float
+    route: str
+
+    def update(self, lat, lng):
+        self.lat = lat
+        self.lng = lng
+
+
+@dataclass
+class WindowBounds:
+    south_lat: float = 0.0
+    north_lat: float = 0.0
+    west_lng: float = 0.0
+    east_lng: float = 0.0
+
+    def is_inside(self, lat, lng):
+        s_lat = self.south_lat
+        n_lng = self.north_lat
+        w_lng = self.west_lng
+        e_lng = self.east_lng
+        return (s_lat <= lat) and (lat <= n_lng) and (w_lng <= lng) and (lng <= e_lng)
+
+    def update(self, south_lat, north_lat, west_lng, east_lng):
+        self.south_lat = south_lat
+        self.north_lat = north_lat
+        self.west_lng = west_lng
+        self.east_lng = east_lng
+
+
+async def listen_browser(ws, bounds: WindowBounds):
     while True:
         try:
             response = await ws.get_message()
             logging.debug(response)
-            bounds = json.loads(response)
-            await send_channel.send(bounds)
+            bounds_new = json.loads(response)
+            bounds_new = bounds_new['data']
+            bounds.update(**bounds_new)
             await trio.sleep(5)
         except trio_websocket.ConnectionClosed:
             break
 
 
-async def send_new_location(ws, receive_channel):
-    bounds = None
+async def send_new_location(ws, bounds: WindowBounds):
+    bounds = bounds
     while True:
-        try:
-            with trio.move_on_after(0.1) as move:
-                bounds = await receive_channel.receive()
-
-        except trio.Cancelled:
-            pass
-        if not bounds:
-            continue
-
         try:
             buses_location = {
                 "msgType": "Buses",
-                "buses": [
-
-                ]
+                "buses": []
             }
 
-            for bus_id, bus_data in BUSES.items():
-                if is_inside(bounds['data'], bus_data['lat'], bus_data['lng'], ):
-                    buses_location['buses'].append(
-                        {
-                            "busId": bus_id,
-                            "lat": bus_data['lat'],
-                            "lng": bus_data['lng'],
-                            "route": bus_data['route']
-                        }
-                    )
+            for bus in BUSES.values():
+                if bounds.is_inside(bus.lat, bus.lng):
+                    buses_location['buses'].append(asdict(bus))
 
             buses_location = json.dumps(buses_location)
             await ws.send_message(buses_location)
@@ -60,20 +77,11 @@ async def send_new_location(ws, receive_channel):
 
 
 async def talk_to_browser(request):
-    send_channel, receive_channel = trio.open_memory_channel(0)
+    bounds = WindowBounds()
     ws = await request.accept()
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(listen_browser, ws, send_channel)
-        nursery.start_soon(send_new_location, ws, receive_channel)
-
-
-def is_inside(bounds, lat, lng):
-    s_lat = bounds['south_lat']
-    n_lng = bounds['north_lat']
-    w_lng = bounds['west_lng']
-    e_lng = bounds['east_lng']
-
-    return (s_lat <= lat) and (lat <= n_lng) and (w_lng <= lng) and (lng <= e_lng)
+        nursery.start_soon(listen_browser, ws, bounds)
+        nursery.start_soon(send_new_location, ws, bounds)
 
 
 async def update_current_location(request):
@@ -82,14 +90,19 @@ async def update_current_location(request):
         try:
             current_location = await ws.get_message()
             current_location = json.loads(current_location)
+            bus_id = current_location['busId']
 
-            BUSES[current_location['busId']] = {
-                'lat': current_location['lat'],
-                'lng': current_location['lng'],
-                'route': current_location['route'],
-            }
+            if bus_id in BUSES:
+                bus = BUSES[bus_id]
+                bus.update(current_location['lat'], current_location['lng'])
+            else:
+                BUSES[bus_id] = Bus(
+                    busId=bus_id,
+                    lat=current_location['lat'],
+                    lng=current_location['lng'],
+                    route=current_location['route']
+                )
 
-            # print(current_location) TODO add to logger
         except ConnectionClosed:
             break
 
