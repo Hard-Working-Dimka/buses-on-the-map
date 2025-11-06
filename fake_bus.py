@@ -7,8 +7,6 @@ from itertools import cycle, islice
 from random import randint, choice
 
 import trio
-from sys import stderr
-
 import trio_websocket
 from trio_websocket import open_websocket_url
 import asyncclick as click
@@ -72,7 +70,7 @@ async def send_updates(server_address, receive_channel, refresh_timeout):
                     await ws.send_message(message)
                     await trio.sleep(refresh_timeout)
     except OSError as ose:
-        print('Connection attempt failed: %s' % ose, file=stderr)
+        logging.error('Connection attempt failed: %s' % ose)
 
 
 @click.command()
@@ -83,9 +81,12 @@ async def send_updates(server_address, receive_channel, refresh_timeout):
 @click.option('-id', '--emulator_id', type=str, default=None, required=False, help="prefix to BusID.")
 @click.option('-t', '--refresh_timeout', type=float, default=1, required=False,
               help="Delay in updating server coordinates.")
-@click.option('-v', '--v', type=bool, default=False, required=False, help="Turn on logging")  # TODO: add logging
+@click.option('-v', '--v', type=bool, default=False, required=False, help="Turn on logging")
 async def run_busses(server, routes_number, buses_per_route, websockets_number, emulator_id, refresh_timeout, v):
-    logging.basicConfig(level=logging.DEBUG)  # TODO: add connect with CLI
+    if v:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.disable(logging.CRITICAL)
 
     async with trio.open_nursery() as nursery:
 

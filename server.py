@@ -1,11 +1,13 @@
 import json
 import logging
+from contextlib import suppress
 from dataclasses import dataclass, asdict
 from functools import partial
 
 import trio
 import trio_websocket
 from trio_websocket import serve_websocket, ConnectionClosed
+import asyncclick as click
 
 BUSES = {}
 
@@ -107,15 +109,23 @@ async def update_current_location(request):
             break
 
 
-async def main():
+@click.command()
+@click.option('-bus', '--bus_port', type=int, default=8080, required=False, help="port for the bus simulator")
+@click.option('-browser', '--browser_port', type=int, default=8000, required=False, help="Browser port")
+@click.option('-v', '--v', type=bool, default=False, required=False, help="Turn on logging")
+async def main(bus_port, browser_port, v):
+    if v:
+        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger('trio-websocket').setLevel(logging.CRITICAL)
+    else:
+        logging.disable(logging.CRITICAL)
+
     serve_websocket_with_ssl_contex = partial(serve_websocket, ssl_context=None)
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(serve_websocket_with_ssl_contex, update_current_location, '127.0.0.1', 8080)
-        nursery.start_soon(serve_websocket_with_ssl_contex, talk_to_browser, '127.0.0.1', 8000)
+        nursery.start_soon(serve_websocket_with_ssl_contex, update_current_location, '127.0.0.1', bus_port)
+        nursery.start_soon(serve_websocket_with_ssl_contex, talk_to_browser, '127.0.0.1', browser_port)
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    logging.getLogger('trio-websocket').setLevel(logging.CRITICAL)
-
-    trio.run(main)
+    with suppress(KeyboardInterrupt):  # FIXME catch this error
+        trio.run(main.main)
