@@ -9,6 +9,8 @@ import trio_websocket
 from trio_websocket import serve_websocket, ConnectionClosed
 import asyncclick as click
 
+from data_validators import validate_bus_response, validate_browser_response
+
 BUSES = {}
 
 
@@ -50,6 +52,11 @@ async def listen_browser(ws, bounds: WindowBounds):
         try:
             response = await ws.get_message()
             logging.debug(response)
+
+            result_of_validation = validate_browser_response(response)
+            if not result_of_validation['valid']:
+                await ws.send_message(json.dumps(result_of_validation['errors']))
+                continue
             bounds_new = json.loads(response)
             bounds_new = bounds_new['data']
             bounds.update(**bounds_new)
@@ -91,6 +98,12 @@ async def update_current_location(request):
     while True:
         try:
             current_location = await ws.get_message()
+
+            result_of_validation = validate_bus_response(current_location)
+            if not result_of_validation['valid']:
+                await ws.send_message(json.dumps(result_of_validation['errors']))
+                continue
+
             current_location = json.loads(current_location)
             bus_id = current_location['busId']
 
@@ -109,11 +122,7 @@ async def update_current_location(request):
             break
 
 
-@click.command()
-@click.option('-bus', '--bus_port', type=int, default=8080, required=False, help="port for the bus simulator")
-@click.option('-browser', '--browser_port', type=int, default=8000, required=False, help="Browser port")
-@click.option('-v', '--v', type=bool, default=False, required=False, help="Turn on logging")
-async def main(bus_port, browser_port, v):
+async def start_server(bus_port, browser_port, v):
     if v:
         logging.basicConfig(level=logging.DEBUG)
         logging.getLogger('trio-websocket').setLevel(logging.CRITICAL)
@@ -124,6 +133,14 @@ async def main(bus_port, browser_port, v):
     async with trio.open_nursery() as nursery:
         nursery.start_soon(serve_websocket_with_ssl_contex, update_current_location, '127.0.0.1', bus_port)
         nursery.start_soon(serve_websocket_with_ssl_contex, talk_to_browser, '127.0.0.1', browser_port)
+
+
+@click.command()
+@click.option('-bus', '--bus_port', type=int, default=8080, required=False, help="port for the bus simulator")
+@click.option('-browser', '--browser_port', type=int, default=8000, required=False, help="Browser port")
+@click.option('-v', '--v', type=bool, default=False, required=False, help="Turn on logging")
+async def main(bus_port, browser_port, v):
+    await start_server(bus_port, browser_port, v)
 
 
 if __name__ == '__main__':
